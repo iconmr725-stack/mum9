@@ -10,22 +10,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Put the files in the right folders
+        run: |
+          if [ -f assemble.sh ]; then
+            bash assemble.sh
+            echo "P=build_project" >> "$GITHUB_ENV"
+          else
+            ZIP=$(ls MumFlorence*.zip | sort -V | tail -n 1)
+            mkdir -p work
+            unzip -q -o "$ZIP" -d work
+            echo "P=work/MumFlorence" >> "$GITHUB_ENV"
+          fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-      - name: Download offline voice model (bundled into the app)
+      - name: Download voice models (bundled into the app)
+        working-directory: ${{ env.P }}
         run: |
           mkdir -p app/src/main/assets
           curl -L -o m.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          D=$(unzip -Z1 m.zip | head -1 | cut -d/ -f1)
           unzip -q m.zip
-          mv vosk-model-small-en-us-0.15 app/src/main/assets/model
+          mv "$D" app/src/main/assets/model
+          curl -L -o s.zip https://alphacephei.com/vosk/models/vosk-model-spk-0.4.zip
+          D=$(unzip -Z1 s.zip | head -1 | cut -d/ -f1)
+          unzip -q s.zip
+          mv "$D" app/src/main/assets/spk
+          ls app/src/main/assets/model app/src/main/assets/spk
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - run: gradle assembleDebug --no-daemon
+      - name: Build the APK
+        working-directory: ${{ env.P }}
+        run: gradle assembleDebug --no-daemon
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-${{ github.run_number }}
           name: Mum Florence (build ${{ github.run_number }})
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: ${{ env.P }}/app/build/outputs/apk/debug/app-debug.apk
